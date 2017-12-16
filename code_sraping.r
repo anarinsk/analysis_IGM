@@ -32,7 +32,7 @@ tibble( list = survey_list, id = seq_len(length(list)) ) -> df_survey
 
 # MAKE DF for answer ----
 
-make_df4issue <- function(uid, what = 1){
+make_df4issue <- function(uid){
   
   df_survey %.>% slice(., uid) %.>% .[['list']] -> url 
   df_survey %.>% slice(., uid) %.>% .[['id']] -> id
@@ -55,7 +55,7 @@ make_df4issue <- function(uid, what = 1){
     map(., cherrypick_univ) %.>% unlist(.) -> col_univ
   # Extract votes 
   cherrypick_vote <- function(x){
-  str_replace_all(x, "<span class=\"option-.\">|<span class=\"option-\">|\t</span>|\n", "") %.>% 
+  str_replace_all(x, "<span class=\"option-.\">|<span class=\"option-\">|\t</span>|\n|\t", "") %.>% 
   .[. %in% c('Strongly Agree', 'Agree', 'Uncertain', 
              'Disagree', 'Strongly Disagree','No Opinion', 
              'Did Not Answer', 'Did not answer', 'Did Not Vote')] %.>% 
@@ -94,15 +94,12 @@ make_df4issue <- function(uid, what = 1){
   
 }
 
-# 38 
-
 1:4 %.>% map_df(., make_df4issue) -> vdf0
 6:157 %.>% map_df(., make_df4issue) -> vdf1
 bind_rows(vdf0, vdf1) -> df_answer
 
 #### Make DF for issue, questions, date ----
 extract_question <- function(df){
-  
   str_remove1 <- "<h2>|</h2>";
   str_remove2 <- "<h3 class=\"surveyQuestion\">|\n|</h3>";
   str_remove3 <- "<h6>|</h6>";
@@ -125,7 +122,6 @@ extract_question <- function(df){
   dff[!dff == ""] %.>% str_trim(.) %.>% return(.) 
 } 
 make_df4issue_idx <- function(url){
-  
   read_html(url) -> this_url 
   
   str_remove1 <- "<h2>|</h2>";
@@ -170,7 +166,7 @@ df_idx %.>% group_by(., subject, time) %.>%
 # Clean DFs ----
 !ls() %in% c('df_answer', 'df_idx', 'df_survey') -> list_rm 
 rm(list=ls()[list_rm])
-save.image(here("df_src.RData"))
+save.image(here("analysis_IGM","df_src2.RData"))
 
 # End of code 
 
