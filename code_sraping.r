@@ -154,10 +154,11 @@ df_survey %.>% slice(., 6:157) %.>% .[['list']] %.>% map_df(., make_df4issue_idx
 bind_rows(vdf0, vdf1) -> df_idx 
 
 df_idx %.>% 
-  distinct(., subject, time) %.>% 
   mutate(., 
-         id = seq_len(nrow(.))
-         ) -> tdf0
+         t_id = seq_len(nrow(.)), 
+         id = ifelse(t_id >= 5, t_id + 1, t_id)
+         ) %.>% 
+  dplyr::select(., -one_of('t_id')) -> tdf0
   
 df_idx %.>% group_by(., subject, time) %.>% 
   mutate(., n_q = seq_len(length(subject))) %.>% 
