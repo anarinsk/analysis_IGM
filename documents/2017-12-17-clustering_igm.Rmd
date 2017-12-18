@@ -12,64 +12,194 @@ output:
 # Disclaimer 
 
 ```{r include=FALSE}
+# Packages for this doc. 
+#sapply(c('cluster', 'factoextra', 'dendextend'), install.packages)
+library(cluster)    # clustering algorithms
+library(factoextra) # clustering visualization
+library(dendextend) # for comparing two dendrograms
+
+# Packages for Rmd 
 library(tidyverse)
-library(knitr)
 library(wrapr)
 library(ggthemes) 
 library(showtext)
+library(knitr)
 library(here)
 library(printr)
 library(kableExtra)
-load("data/eda.RData") 
 
-#font_add("square", regular = "fonts/NanumSquareR.otf")
+font_add("square", regular = "fonts/NanumSquareR.otf")
 ```
+
+# tl; dr 
+
+  1. IGM 패널의 미국 경제학자들의 견해를 긁어보니 경제학자들은 거의 모든 사안에 대해서 꽤 일치된 견해를 갖고 있더라.(물론, 해석은 각자의 마음 속에...)
+  2. 분석에 활용된 과정과 분석 결과는 다음의 각각 링크에서 Download!
+    a. [Web scraping](https://github.com/anarinsk/analysis_IGM/blob/master/code_sraping.r)
+    b. [Munging data](https://github.com/anarinsk/analysis_IGM/blob/master/code_munging.r)
+    c. [Analysis](https://github.com/anarinsk/analysis_IGM/blob/master/code_modelling.r)
+    d. csv converted source data 
 
 # Motivation 
 
-집에 심심하게 있다가 갑자기 이런 생각이 떠올랐다. 믿을만한 경제학자들은 얼마나 의견에 합의를 볼 수 있을까? 그 믿을만한 경제학자들이 우수한 학자들이면 더 좋을 것이다. 여기에 생각이 미치자, '데이터는 어디서 구하지'라고 생각이 흘렀고, 당장 시카고 Booth의 IGM을 떠올렸다. IGM이 그간 몇 개의 토픽을 다뤘는지 가보니 사례는 충분했다. 이제 기술적인 문제다. 웹 자료니까 긁어야하는데 웹스크래핑을 해본지 꽤 되었다. Python에서만 해봤는데, R에서도 해보면 좀 도움이 될까 싶었다. 마지막으로 자료의 성격이 문제다. 보니, 전형적인 리커드 자료(Likert scale), 즉 5점 척도다. 흠, 얘네들을 클러스터링 하려면 어떻게 해야 하나? 일단, 양적 자료는 아니니 K-means 같은 표준적이고 쉬운 방법은 열외다. 리커트 자료를 다루는 데는 문외한이고 이제부터 공부해서 뭔가 만들어낼 성의는 없다. 딱 주말에 심심풀이로 꺼내든 프로젝트라서 주말에 끝내고 싶었다! (역시 나에게는 대충과 야매가 어울린다.)
+집에 심심하게 있다가 '갑자기'(out of nowhere!) 이런 생각이 떠올랐다. '믿을만한'(이라고 쓰고 '저명한'이라고 읽자) 경제학자들은 얼마나 의견에 합의를 볼 수 있을까? 공상이 흘러 흘러 , '데이터는 어디서 구하지'라고 생각이 흘렀고, 당장 시카고 Booth의 [IGM 패널](http://www.igmchicago.org/)이 떠올랐다. 급히 스마트폰으로 IGM이 그간 몇 개의 토픽을 다뤘는지 찾아보니 사례는 충분했다. 이제 기술적인 문제다. 웹 자료니까 긁어야하는데 웹스크래핑을 해본지 꽤 되었다. Python에서만 해봤는데, 이 기회에 R로도 해보면 재미있겠지? 마지막으로 자료의 성격이 문제다. 답변은 전형적인 리커드 척도(Likert scale), 즉 5점 척도다. 흠, 얘네들을 클러스터링 하려면 어떻게 해야 하나? 일단, 양적 자료는 아니니 k-means 같은 표준적이고 손쉬운 방법은 못 쓴다. 설상가상 리커트 척도를 다루는 데는 문외한이고, 이제부터 공부해서 뭔가 만들어낼 성의도 없다. 딱 주말에 심심풀이로 꺼내든 프로젝트라서 주말에 끝내고 싶다! (역시 나에게는 대충과 야매가 어울린다.) 어쨌든 이후의 글에서는 아래의 세 가지 내용을 간단히 다뤄보고자 한다. 
 
-이 글은 이러한 주말의 의식을 흐름을 따르는 형식으로 작성해보도록 하자. 
+  1. IGM 패널 웹 사이트를 긁기 
+  2. 자료 정리(munging) 및 클러스터링 앍고리듬 적용하기 
+  3. 결과에 대한 내 맘대로 해석, 해결 혹은 헛소리 
 
-  1. 우선 IGM 사이트의 웹을 긁어오기 
-  2. 자료 정리 및 클러스터링 적용하기 
-  3. 결과에 대한 내만대로 해석 혹은 해설 
-  
 # How to scrap results of IGM panel  
 
-웹을 스크래핑 하는 데에는 몇 가지 방법이 있지만 기술적인 내용을 제외하고 실용적으로 보자면 코드로 하느냐 아니면 수작업으로 하느냐 둘 중 하나다. 후자는 다시 '정말' 손으로 하는지 아니면 '손'을 흉내내는지에로 다시 가를 수 있다. 코드로 하는게 가장 좋겠지만 이건 진입장벽이 있고, js로 된 사이트들은 더 많이 고민해야 한다. 경우에 따라서는 후자가 빠를 수도 있으니 굳이 노가다하는 걸 망설일 필요는 없겠다. 게다가, 시중에서 흔히 볼 수 있는 매크로 프로그램들을 잘 쓰면 생각보다 쉽게 데이터를 얻을 수 있다. 
+웹을 스크래핑 하는 데에는 몇 가지 방법이 있지만 기술적인 내용을 제외하고 실용적으로 보자면 '코드'로 하느냐 아니면 '수작업'으로 하느냐 둘 중 하나다. 후자는 다시 '정말' 손으로 하는지 아니면 '손'을 흉내내는지로 다시 나눌 수 있겠다. 코드로 하는게 가장 좋겠지만 이건 진입장벽이 있고, js로 된 사이트들은 더 많은 고민과 꼼수가 필요하다. 경우에 따라서는 후자가 빠를 수도 있으니 굳이 노가다하는 걸 망설일 필요는 없겠다. (당신에게 충분한 성의만 있다면) 노가다는 언제나 진리다.[^macro] 
 
-어쨌든 웹 스크래핑은 파이썬의 장점이었지만, RStudio에서 내놓은 rvest 패키지 떄문에 이런 격차를 순식간에 사라지게 된 것 같다. 웹사이트를 html로 저장한 뒤 node를 따는 방식으로 원하는 자료들을 쉽게 긁을 수 있다. 다만, 이 경우 웹사이트를 뭔가 숨겨놓지 않아야 하는데 IGM의 경우에는 구조를 그대로 볼 수 있게 되어 있다. 
+[^macro]: 시중에서 흔히 볼 수 있는 매크로 프로그램들을 잘 쓰면 생각보다 쉽게 데이터를 얻을 수 있다. 실제로 스크래핑을 막아둔 곳들도 이런 방법으로 자료를 수집할 수 있다.  
 
-이런 방식으로 IGM 사이트를 두 개를 각각 따로따로 긁어냈다. 하나는 경제학자들에게 질문을 던진 토픽을 긁어냈고 그 토픽에 대한 경제학자들의 답 내용을 긁어냈다. 토픽은 2017년 12월 17일 현재 전부 158개였으나, 패널은 51명의 저명한 경제학자들로 구성되어 있다. 이 중 금융위기에 관한 질문은 나머지와 다른 구조를 갖고 있으므로 제외했다. 따라서 분석에 활용된 토픽은 157개다. 
+어쨌든 웹 스크래핑은 그간 파이썬에 장점이 있었지만, RStudio에서 내놓은 rvest 패키지 떄문에 이런 격차를 순식간에 사라지게 된 것 같다. 웹사이트를 html로 저장한 뒤 node를 따는 방식으로 원하는 자료들을 쉽게 긁을 수 있다.[^RStudio] 다만, 이 경우 웹사이트를 뭔가 숨겨놓지 않아야 하는데 IGM의 경우에는 구조를 그대로 볼 수 있게 되어 있다. 좌간, 아래 두 개의 튜토리얼을 참고하면 누구나 쉽게 웹 사이트를 발라낼 수 있다. 참으로 예리한 칼이 아닌가! 
+
+[^RStudio]: RStudio에서 준비중인 RStudio Cloud에서는 조만간 "Automate Tasks"도 지원할 예정이다. 이렇게 되면, 자신의 local machine을 켜두지 않고서도 거의 실시간 급으로 웹사이트를 긁어 처리하는 것도 손쉽게 할 수 있을 것이다. 
+
+[Beginner’s Guide on Web Scraping in R (using rvest) with hands-on example](https://www.analyticsvidhya.com/blog/2017/03/beginners-guide-on-web-scraping-in-r-using-rvest-with-hands-on-knowledge/)
+[Scrape website data with the new R package rvest](http://zevross.com/blog/2015/05/19/scrape-website-data-with-the-new-r-package-rvest/)
+
+이런 방식으로 IGM 사이트를 두 개를 각각 따로따로 긁어냈다. 하나는 미국 경제학자들에게 질문을 던진 토픽을 긁어냈고 그 토픽에 대한 경제학자들의 답 내용을 긁어냈다. 토픽은 2017년 12월 17일 현재 전부 158개였으나, 패널은 51명의 저명한 경제학자들로 구성되어 있다. 데이터 구조는 복잡하지 않아서 스크래핑은 금방 끝났다. 이 중 금융위기에 관한 질문은 나머지와 다른 구조를 갖고 있으므로 제외했다. 따라서 분석에 활용된 토픽은 157개다. 
 
 # How to group economists 
 
-클러스터링이랑 관찰이 지닌 속성(변수)을 비교해 비슷한 무리를 묶는 통계적 기법이다. 이때 비슷한 무리를 묶기 위해 필요한 것은 거리 개념이다. 그래서 양적 변수를 지닌 대상들에 쉽게 적용되고, 가장 표준적인 클러스터링 방법은 k-menas다. 그런데 우리 자료는 양적 자료가 아니다. 이를 억지로 양적 자료로 만들어 쓸 수 있겠지만 응답과 응답 사이에 인터벌 개념을 임의로 가정하지 않는 이상 자의성을 띨 수 밖에 없다. k-means를 쓸 수 없다면 다음으로 생각해 볼 수 있는 방법이 계층 클러스터링(hierarchical clustering, 이하 HC)이다. 말이 그대로 시사하듯이 전체 하나가 전부 다르다고 가정한 후 비슷한 관찰을 묶는 방법(bottom-up) 혹은 전체가 전부 하나의 군집이라고 가정한 후 가지를 쳐 나가는 방법(top-down), 두 가지가 있다.    
+클러스터링(clustering)은 관찰이 지닌 속성(변수)을 비교해 비슷한 무리를 묶는 통계적 기법이다.[^clustering1] 이때 비슷한 무리를 묶기 위해 필요한 것은 '거리 개념'이다. 거리가 나오려면 양적 변수여야 한다는 건 당연한 이치다. 이에 기반한 표준적인 클러스터링 방법은 뭔가 중심을 찾고 이를 중심으로 비슷한 녀석들을 묶는 [k-means](https://en.wikipedia.org/wiki/K-means_clustering) 알고리즘이다. 
 
-HC는 IGM 패널과 같은 양적 혹은 범주 자료를 다루기에도 비교적 적합하다. 물론 k-means 만큼 명쾌하지 않을 수는 있지만, 언제나 그렇듯이 방법이 없는 것보다는 낫지 않겠는가? 두 방법 모두 R에서 지원한다. 
+[^clustering]: 보통 '군집화'로 번역하지만 내 맘대로 클러스터링으로 쓰도록 하겠다. 
+
+그런데 IGM 패널 자료는 양적 자료가 아니다. 클러스터링을 위해 거리 개념이 자의적으로 들어가는 건 어쩔 수 없다 치자. kmeans의 중심 개념은 자의성을 확대한다. 그렇다면 다음으로 생각해 볼 수 있는 방법이 계층 클러스터링(hierarchical clustering, 이하 HC)이다. 위계적이라는 단어가 그대로 시사하듯이 이는 어떤 기초적인 상태에서 출발해서 거슬러 올라가는 혹은 내려가는 클러스터링이다. 전체 하나가 전부 다르다고 가정한 후 비슷한 관찰을 묶는 방법(agglomerative, bottom-up) 혹은 전체가 전부 하나의 군집이라고 가정한 후 가지를 쳐 나가는 방법(divisive, top-down), 두 가지가 있다.^[HC] 역시 거리 개념에 기반하고 있지만, 계층적 방법을 쓰기 때문에, 종종 범주형 자료를 클러스터링하는 데 활용되곤 한다.^[clustering2]    
+
+[^HC]: 자세한 내용은 [이곳](https://en.wikipedia.org/wiki/Hierarchical_clustering)을 참고하라. 
+[^clustering]: 이외에도 스피어만 코릴레이션 처럼 다름 자체를 측정해서 k-means의 방법을 수정한 k-modes 알고리즘 혹은 latent vairable model을 얼른 고려해볼 수 있겠다. 뭐 귀찮아서 일단 용서하시고 넘어가시라! 사실 k-modes는 divisive와 거의 동일한 결과를 내주었고, latent variable model은 좀 껄쩍지근 부분이 있어서 더 고민이 필요하다. 
+
+그래서 IGM 패널의 클러스터링에는 HC쓰도록 하겠다. 찝찝한 부분이 없지는 않지만, 언제나 그렇듯이 안해보는 것보다는 낫지 않겠는가? 야매는 오용을 두려워하지 않고 일단 해보는 삽질을 마다하지 않는다. 
+
+한가지 남은 문제는 "Do Not Answer", "No Opinion" 그리고 패널 설문에 참여하지 못한 경우를 어떻게 처리할 것인지이다. 이를 별도 카테고리로 둘 것인가? 리커트 척도의 특성상 별도의 범주를 구성하기가 애매하다. 보통 이런 경우 해당 변수의 평균값, 중간값을 넣어주는 경우도 있으나, 이 경우는 "Uncertain"으로 보는 게 비교적 왜곡이 적을 것 같다. 고민하다가 답을 못한 경우라면 머리 속에서 이런 저런 생각이 다 떠올랐기 때문 아닐까? 물론, 잘 몰라서 답을 못한 경우와 구분이 안되긴 한다. IGM 패널에 들어간 분들의 면면을 본다면, "Uncertain" 처리가 그래도 괜찮아 보인다. 
+
+먼저 agglomerative부터 보자. agglomerative의 경우  linkage criteria에 따라서 군집 구조의 강도를 찾아주는 agglomerative coefficient를 구할 수 있다. 다음의 결과처럼 "ward" 방법이 가장 괜찮은 결과를 만들어준다.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Agglomerative coefficient
+m <- c( "average", "single", "complete", "ward")
+names(m) <- c( "average", "single", "complete", "ward")
+m %.>% map_dbl(., function(x){agnes(tdf, method = x) %.>% .$ac })
+```
+
+최적의 클러스터 수를 찾기 위해 약간의 추가적인 분석을 수행했다. agglomerative의 경우 3개가 최적임을 알 수 있다. 
+
+```{r echo=TRUE, fig.align='center', fig.retina=1, fig.show='asis', fig.showtext=T, message=FALSE, warning=FALSE}
+# Diagnostic for AGNES 
+fviz_nbclust(tdf, FUN = hcut, method = "wss")
+fviz_nbclust(tdf, FUN = hcut, method = "silhouette")
+gap_stat <- clusGap(tdf, FUN = hcut, nstart = 25, K.max = 10, B = 50)
+fviz_gap_stat(gap_stat) 
+
+# Cut tree into 3 groups
+sub_agnes <- cutree(as.hclust(agnes_opt), k = 3)
+# Number of members in each cluster
+fviz_cluster(list(data = tdf, cluster = sub_agnes), 
+             ggtheme = theme_minimal(), 
+             repel = T, labelsize = 9) + 
+  theme(text = element_text(family="square", size=11))
+```
+
+이 분류에 기반해 dendrogram을 그려보자. 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.align='center', fig.height=8, fig.width=7, fig.show='asis', fig.showtext=T,  fig.retina=1, dpi=300}
+# Dendrogram AGNES 
+agnes_opt <- agnes(tdf, method = "ward")
+agnes_opt %.>% my_dendplot(., 3) 
+```
+
+한편, divisive의 경우 aggromerative에 비해 낮은 군집 계수를 나타냈다. 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.align='center', fig.show='asis', fig.showtext=T,  fig.retina=1, dpi=300}
+# Do DIANA 
+diana <- diana(tdf)
+diana$dc
+sub_diana <- cutree(as.hclust(diana), k = 3)
+fviz_cluster(list(data = tdf, cluster = sub_diana))
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, fig.align='center', fig.height=8, fig.width=7, fig.show='asis', fig.showtext=T,  fig.retina=1, dpi=300}
+# Dendrogram DIANA 
+diana %.>% my_dendplot(., 3)
+```
+
+익숙한 이름들이 등장하니 보는 맛이 조금은 있다. 모든 클러스터링은 나뉘어진 후 그에 대해서 이야기를 붙여줘야 의미가 살아난다. 이렇게 세 가지로 분류된 경제학자들은 무엇이 어떻게 얼마나 다를까? 앞서 분석한 agglomerative와 divisive 중 다소 군집도가 높았던 agglomerative의 의한 분류로 간단히 더 살펴보도록 하자. 
 
 # How different are economist? 
 
-위 얻은 HC 집단에 대해서 각 설문별로 중위값을 취해 그룹의 '대표 견해'라고 가정해보자. 그룹 사이에 대표 견해에 큰 차이가 있을까? 결과를 보시면 알겠지만, 미국의 저명한 경제학자들은 다른 면보다는 비슷한 면이 많다. 이에 대한 해석은 알아서 각자 하시면 되겠다. 다소 의견 대립이 있지 않을까, 이왕이면 '좌우'로 나눠서 싸워주면 좋지 않을까 했던 개인적인 바람이 있었지만... 
+클러스터링 결과를 이야기로 꾸미기 위해서 HC의 결과로 얻은 각 집단에 대해서 각 설문별로 중위값을 취해 그룹의 '대표 견해'라고 부르겠다. 그룹 사이에 대표 견해에 큰 차이가 있을까? 다음에 제시될 결과에서 보듯이, 미국의 저명 경제학자들은 차이보다는 의견 일치를 보는 경향이 강했다. 이에 대한 해석은 알아서 각자 하시면 되겠다. 다소 의견 대립이 있지 않을까, 이왕이면 '좌우'로 나눠서 싸워주면 좋지 않을까 했던 개인적인 바람은 저 멀리... 
 
-앞서 세개의 집단으로 나눈 경제학들의 특성 정도는 볼 수 있겠다.  
+앞서 agglomerative에서 세개의 집단으로 나눈 경제학들의 특성 정도는 볼 수 있겠다. 아래는 집단을 나눈 것이고 ( )안에 든 색은 앞서 본 dendrogram의 색깔을 나타낸다. 
 
-  1. 1번 집단은 적극적으로 활발한 의견을 개진힌 집단이다. 즉 참여하지 않는 설문이 가장 낮은 집단이기도 하다. 
-  2. 2번 집단은 가장 소극적으로 의견을 개진한 집단이다. 
-  3. 3번 1번의 중간 정도의 의견 개진을 한 집단이다. 
+  1. 1번 집단은 적극적으로 활발한 의견을 개진힌 집단이다. 즉 집단으로는 보면 참여하지 않는 설문이 하나도 없다. (적색)
+  2. 2번 집단은 중간 정도의 의견을 개진한 집단이다. (녹색)
+  3. 3번 잡던운 가장 소극적인 의견 개진을 한 집단이다. (파란색)
   
-HC를 적용하는 과정에서 무응답은 "uncertain"으로 처리했다. 이렇게 가정하면, 1과 2 그리고 1와 3 사이에 완전 의견 일치를 보는 토픽은 100개가 넘는다. 2와 3 사이의 성향이 달라서 완전히 동의한 토픽은 50개 정도다. 
+IGM 포럼의 방식대로 "Strongly Agree" 부터 "Strongly Disagree"까지 차례로 1부터 5까지의 숫자를 부여했다. 즉, 
 
-응답의 방향성이 지닌 차이는 있을까? 답변이 리커트 자료이기 때문에 의견일치를 보지 못하는 토픽을 쉽게 찾을 수 있다. 즉, 3번 "uncertain"을 기준으로 이 경계를 넘는 차이가 존재했는지 찾아볼 수 있다. 즉, 한 집단은 "Strongly Agree" 혹은 "Agree"가 대표값인 질문이 있을 때 다른 집단은 "Disagree" 혹은 "Strongly Disagree"가 대표값인 경우가 있는지를 찾으면 된다. 이런 경우는 딱 5개의 질문 밖에 없었다. 즉, IGM 패널의 경제학자들의 경우 한 집단의 견해에 대해서 찬반 내에서 함께 움직이는 경우가 많으며 많이 움직여야 "uncertain"까지 이동했다고 볼 수 있겠다. 
+  1. Strongly Agree 
+  2. Agree 
+  3. Unertain 
+  4. Disagree 
+  5. Stongly Disagree 
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+make_group_med(FALSE) %.>% count_group_med(.) %.>% kable(., col.names=c('집단 대표값', '1그룹 응답수', '2그룹 응답수', '3그룹 응답수'), caption="NA를 그대로 둔 경우") %.>% kable_styling(.)
+
+make_group_med(TRUE) %.>% count_group_med(.) %.>% kable(., col.names=c('집단 대표값', '1그룹 응답수', '2그룹 응답수', '3그룹 응답수'), caption="NA를 Uncertain으로 처리한 경우") %.>% kable_styling(.)
+```
+
+HC를 적용하는 과정에서 무응답은 "uncertain"으로 처리했다. 따라서 위의 표에서 첫번째 것은 참고만 하고 두 번째 것을 이용해보도록 하자. 두번째 것을 활용해 각 토픽과 질문에 대해서 각 집단 별로 견해차이가 얼마나 있었는지 살펴보자. 
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+count_group_dff() %.>% kable(., col.names=c('집단간 차이 정도', '1그룹 - 2그룹', '1그룹 - 3그룹', '2그룹 - 3그룹')) %.>% kable_styling(.)
+```
+
+표의 첫번째 행은 각 집단의 차이를 내타내고 나머지 항은 각 그룹의 값을 뺀 것을 나타낸다. 별로의 시각화가 불필요할 정도로 경향성은 뚜렷하다. 157개 중에서 100개 이상의 견해에 대해서 각 집단 별로 일치를 보고 있다. -2 혹은 1.5 이상 큰 견해차이를 드러내는 항목 수 역시 크지 않다. 이는 글 말미에 간단한 링크로 확인할 수 있도록 별도의 표를 제시하겠다. 관심 있는 분들은 링크를 찍어 확인해보시면 되겠다. 
+
+또 다른 관심사는 경제학자들 사이에 분명하게 대립되는 견해가 존재하는지 여부다. 즉, 어떤 집단은 대표견해로 "Agree" 방향을 냈는데, 다른 집단이 "Diagree" 방향을 낸 경우가 있는지, 즉 집단 간의 견해가 "Uncertain"을 넘어간 경우가 있는지도 확인해보았다. 한 건도 없었다! 미국의 저명 경제학자들이 비슷하게 생각하는 경향에 관해서는 두 가지 정도로 언급해두겠다. 
+
+  1. 경제학은 "It depends on"의 학문이다. 경제학이 항상 덧붙이는 "Ceteribus Paribus"를 고려할 때 많은 항목에서 강한 의견보다는 "Uncertain"이 많은 건 당연한 결과일지 모르겠다. 
+  2. 그럼에도 거의 모든 견해에서 방향성이 같다는 건 뭐 그 나물의 그 밥 혹은 제국주의 경제학의 한계일까? 나는 모르겠지만... 
+
+
+앞서 언급한 비교적 견해차이가 컸던 토픽과 질문들은 아래와 같다. 
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+make_group_med(TRUE) %.>% 
+  mutate(.,
+    dff_12 = clu1 - clu2,
+    dff_13 = clu1 - clu3, 
+    dff_23 = clu2 - clu3
+  ) %.>% 
+  filter(., abs(dff_12) >= 2 | abs(dff_23) >=2 | abs(dff_13) >= 2) %.>% 
+  separate(., q_id, into = c("q", "id", "question"), sep = "_") %.>% 
+  dplyr::select(., -one_of('q')) %.>% 
+  mutate(., id = as.integer(id), question = as.integer(question)) %.>% 
+  arrange(., id, question) %.>% 
+  left_join(., df_survey, by = c('id')) %.>% 
+  rename(., url = list) 
+````
+
+물론 학자 개개인의 차이는 클러스터링의 결과보다 클 것이고 자세히 들여다볼 만큼 흥미로운 경우가 있을 것이다. 이 글의 목적인 개략적인 모습을 '소일거리'삼아 만들어본 것일 뿐이다. 그 정도에서 이해주시면 감사하겠다. 어차피 야매 활동일 뿐인 것을... 
 
 # One more things 
 
 더 해볼 수 있는 걸 생각해볼까? (내가 하겠다는 건 아니다...)
 
   1. 이 경제학자들의 추가 변수를 구한다면 뭔가 더 해 볼 수 있겠다. 전공 분야, 대학, 논문 수 등등 
-  2. 몇가지 시도해 볼만한 추가적인 클러스터링 기법이 더 있긴 하다. 
-  3. 나보다 더 훌륭한 분들이 많으니 자료를 퍼가서 마음껏 활용하시라, 마! 
-  
+  2. 해당 자료에서 질문의 내용에 대한 성격 분류는 하지 않았다. 내가 경제학에 야매이기 때문에 섯부른 해석을 덧붙이지 못했다. 뛰어난 누군가가 해주면 감사하게 배우겠다. 
+  3. European Panel은 뜯어내지 않았다. 관심 있는 분은 해보시라. 
+  4. 몇가지 시도해 볼만한 추가적인 클러스터링 기법이 더 있긴 하지만, 별로 기대는 안된다. 
+  5. 이 제한적인 자료로도 더 훌륭한 분석이 가능할 것이니 퍼가서 마음껏 활용하시라, 마! 
 
+  
+<!---- References 
+http://uc-r.github.io/hc_clustering
+---->
   
